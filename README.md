@@ -20,4 +20,4 @@ Follow the model architecture as laid out in the Midterm report.
 
 It is a early fusion model that feeds in screenshots and transcripted text.
 
-![Model Architecture 1](/workspaces/acv-deepfake-detection/assets/model_architecture_1.png)
+![Model Architecture 1](https://github.com/jackieBack/acv-deepfake-detection/blob/main/assets/model_architecture_1.png)
