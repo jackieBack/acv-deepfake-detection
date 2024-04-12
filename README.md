@@ -16,6 +16,7 @@ Perform data collection of both real and deep fake videos of Joe Biden and Donal
 
 We have organized our dataset as follows:
 
+```
 f[real / fake]
 
 --> f[video-clips]: {video-id}.mov / mp3
@@ -24,9 +25,10 @@ f[real / fake]
 
 --> f[screenshots]
 
-----> f[{video-id}]: {video-id}-{***}.jpg
+  --> f[{video-id}]: {video-id}-{***}.jpg
 
 --> f[audio-files]: {video-id}.wav
+```
 
 # Step 2. Fusion Model with Screenshots + Text
 
