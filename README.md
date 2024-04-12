@@ -18,15 +18,15 @@ We have organized our dataset as follows:
 
 f[real / fake]
 
-> f[video-clips]: {video-id}.mov / mp3
+--> f[video-clips]: {video-id}.mov / mp3
 
-> f[text-files]: {video-id}.txt
+--> f[text-files]: {video-id}.txt
 
-> f[screenshots]
+--> f[screenshots]
 
->> f[{video-id}]: {video-id}-{***}.jpg
+----> f[{video-id}]: {video-id}-{***}.jpg
 
-> f[audio-files]: {video-id}.wav
+--> f[audio-files]: {video-id}.wav
 
 # Step 2. Fusion Model with Screenshots + Text
 
