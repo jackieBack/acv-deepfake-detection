@@ -14,6 +14,22 @@ Link Github repo with Google Cloud Build, so that we can leverage our GCP instan
 
 Perform data collection of both real and deep fake videos of Joe Biden and Donald Trump. For deep fake videos, utilize Presidential Deep Fake Dataset (https://www.media.mit.edu/publications/presidential-deepfakes-dataset/)
 
+We have organized our dataset as follows:
+
+```
+f[real / fake]
+
+--> f[video-clips]: {video-id}.mov / mp3
+
+--> f[text-files]: {video-id}.txt
+
+--> f[screenshots]
+
+  --> f[{video-id}]: {video-id}-{***}.jpg
+
+--> f[audio-files]: {video-id}.wav
+```
+
 # Step 2. Fusion Model with Screenshots + Text
 
 Follow the model architecture as laid out in the Midterm report.
