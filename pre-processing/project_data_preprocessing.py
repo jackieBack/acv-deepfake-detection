@@ -9,14 +9,10 @@ Original file is located at
 
 # create custom project datasets and dataloaders
 
-from google.colab import drive
-drive.mount('/content/drive')
 
-#!pip install torch
-
-#!pip install transformers
-
-#!pip install librosa
+# for google colab notebook
+#from google.colab import drive
+#drive.mount('/content/drive')
 
 # imports
 import numpy as np
@@ -25,7 +21,9 @@ from sklearn.model_selection import train_test_split
 import json
 import os
 import torch
+import torchaudio
 import librosa
+from torch.nn.utils.rnn import pad_sequence
 from PIL import Image
 from torchvision import transforms
 from transformers import AutoImageProcessor, ResNetForImageClassification, AutoProcessor
@@ -35,7 +33,7 @@ from torch.nn.utils.rnn import pad_sequence
 import torch.nn as nn
 import torch.optim as optim
 from torchvision import models
-from transformers import BertModel, BertTokenizer, AutoTokenizer
+from transformers import BertModel, BertTokenizer, AutoTokenizer, Wav2Vec2Model
 from transformers import Trainer, TrainingArguments, AdamW
 
 data_dir_real = "./drive/MyDrive/Applied Computer Vision Project/acv-presidential-dataset/real"
@@ -73,13 +71,13 @@ for name in presidents:
 
 data_df = pd.DataFrame(data)
 
-data_df
+print(data_df)
 
-data_df.loc[1,'image_path']
+print(data_df.loc[1,'image_path'])
 
-data_df.loc[1,'text_path']
+print(data_df.loc[1,'text_path'])
 
-data_df.loc[1,'audio_path']
+print(data_df.loc[1,'audio_path'])
 
 # custom dataset
 
@@ -138,27 +136,36 @@ def collate_fn(batch):
   image_lists = [item['images'] for item in batch]
   labels = [item['label'] for item in batch]
 
-  processed_audios = []
+  resampled_audios = []
   for audio, sample_rate in zip(audios, sample_rates):
-    inputs = audio_processor(audio, sampling_rate=sample_rate, return_tensors="pt")
-    processed_audios.append(inputs.input_values.unsqueeze(0))
+      audio_tensor = torch.tensor(audio)  
+      audio_resampled = torchaudio.transforms.Resample(orig_freq=sample_rate, new_freq=16000)(audio_tensor)
+      resampled_audios.append(audio_resampled)
+
+  resampled_audios = pad_sequence(resampled_audios, batch_first=True)
+
+  processed_audios = []
+  for audio_resampled in resampled_audios:
+      inputs = audio_processor(audio_resampled, return_tensors="pt")
+      processed_audios.append(inputs.input_values.unsqueeze(0))
 
   processed_audios = torch.stack(processed_audios, dim=0)
 
-  stacked_images = [torch.stack(images, dim=0) for images in image_lists]
-  images = torch.stack(stacked_images, dim=0)
+  stacked_images = []
+  for image_list in image_lists:
+      stacked_images.extend(image_list)
+  stacked_images = torch.stack(stacked_images, dim=0)
 
   tokenized_texts = text_tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
   tokenized_texts = tokenized_texts['input_ids']
-
-  text_attention_mask = (tokenized_captions != 0).long()
+  text_attention_mask = (tokenized_texts != text_tokenizer.pad_token_id).long()
 
   labels = torch.LongTensor(labels)
 
   batch_dict = {
       "audios": processed_audios,
       "texts": tokenized_texts,
-      "images": images,
+      "images": stacked_images,
       'text_attention_mask': text_attention_mask,
       "labels": labels
   }
@@ -170,15 +177,21 @@ def collate_fn(batch):
 train_df, test_df = train_test_split(data_df, test_size=0.25, random_state=42)
 train_df, val_df = train_test_split(train_df, test_size=0.2, random_state=42)
 
+# reset indices of dataframes to work in dataset class
+
+train_df.reset_index(drop=True, inplace=True)
+val_df.reset_index(drop=True, inplace=True)
+test_df.reset_index(drop=True, inplace=True)
+
 # create training, validation, and testing datasets using custom dataset class
 
 train_dataset = CustomDataset(train_df)
 val_dataset = CustomDataset(val_df)
 test_dataset = CustomDataset(test_df)
 
-# create training, validation, and testing data loaders
+# create training, validation, and testing data loaders using collate function
 
-train_loader = DataLoader(train_dataset, batch_size=8, shuffle=True, collate_fn=collate_fn, num_workers=0)
-val_loader = DataLoader(val_dataset, batch_size=8, shuffle=True, collate_fn=collate_fn, num_workers=0)
-test_loader = DataLoader(test_dataset, batch_size=8, shuffle=True, collate_fn=collate_fn, num_workers=0)
+train_loader = DataLoader(train_dataset, batch_size=2, shuffle=True, collate_fn=collate_fn, num_workers=0)
+val_loader = DataLoader(val_dataset, batch_size=2, shuffle=True, collate_fn=collate_fn, num_workers=0)
+test_loader = DataLoader(test_dataset, batch_size=2, shuffle=True, collate_fn=collate_fn, num_workers=0)
 
