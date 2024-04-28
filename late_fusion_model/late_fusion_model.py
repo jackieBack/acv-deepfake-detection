@@ -127,7 +127,7 @@ def collate_fn(batch):
   audios = [item['audio'] for item in batch]
   sample_rates = [item['sample_rate'] for item in batch]
   texts = [item['text'] for item in batch]
-  image_lists = [item['images'] for item in batch]
+  images_per_item = [item['images'] for item in batch] # list of lists of tensors 
   labels = [item['label'] for item in batch]
 
   resampled_audios = []
@@ -145,10 +145,8 @@ def collate_fn(batch):
 
   processed_audios = torch.stack(processed_audios, dim=0)
 
-  stacked_images = []
-  for image_list in image_lists:
-      stacked_images.extend(image_list)
-  stacked_images = torch.stack(stacked_images, dim=0)
+  # process each item's images as a separate batch (return list instead of tensor)
+  batched_images = [torch.cat(images, dim=0).squeeze(1) for images in images_per_item]
 
   tokenized_texts = text_tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
   tokenized_texts = tokenized_texts['input_ids']
@@ -159,7 +157,7 @@ def collate_fn(batch):
   batch_dict = {
       "audios": processed_audios,
       "texts": tokenized_texts,
-      "images": stacked_images,
+      "images": batched_images,
       'text_attention_mask': text_attention_mask,
       "labels": labels
   }
@@ -320,6 +318,7 @@ distilbert_small.load_state_dict(torch.load('./small_distilbert_weights.pth'))
 torch.cuda.empty_cache()
 
 # late fusion model using audio, images, and text
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 class LateFusionModel(nn.Module):
   def __init__(self, audio_encoder, text_encoder, resnet_layers=5, hidden_size=768, num_classes=2, freeze=False):
@@ -352,12 +351,20 @@ class LateFusionModel(nn.Module):
       self.normalization = nn.LayerNorm(hidden_size * 3)
 
   def forward(self, audios, images, texts, text_attention_mask):
-      # normalize images
-      images = self.normalize_images(images)
       # create image embeddings
-      image_embeddings = self.image_encoder(images)
-      image_embeddings = image_embeddings.view(image_embeddings.size(0), -1)
-      image_embeddings = self.image_linear(image_embeddings)
+      embeddings = []
+      # iterate through lists of images
+      for imgs in images:
+        imgs = imgs.to(device) # move to device here 
+        # normalize images
+        imgs = self.normalize_images(imgs)
+        image_embeddings = self.image_encoder(imgs)
+        image_embeddings = image_embeddings.view(image_embeddings.size(0), -1)
+        image_embedding = image_embeddings.mean(dim=0, keepdim=True) # take mean
+        embeddings.append(image_embedding)
+
+      embeddings_tensor = torch.cat(embeddings, dim=0).to(device)
+      final_image_embeddings = self.image_linear(embeddings_tensor)
 
       # create text embeddings
       text_embeddings = self.text_encoder(texts, attention_mask=text_attention_mask)[0][:,0,:]
@@ -367,7 +374,7 @@ class LateFusionModel(nn.Module):
       audio_embeddings = self.audio_linear(audio_embeddings)
 
       # concatenate image, text, and audio embeddings
-      combined_embeddings = torch.cat((image_embeddings, text_embeddings, audio_embeddings), dim=1)
+      combined_embeddings = torch.cat((final_image_embeddings, text_embeddings, audio_embeddings), dim=1)
 
       # normalize combined embeddings
       normalized_embeddings = self.normalization(combined_embeddings)
@@ -386,7 +393,6 @@ class LateFusionModel(nn.Module):
 
 # initialize model, criterion, and optimizer
 model = LateFusionModel(audio_encoder=wav2vec2_small, text_encoder=distilbert_small)
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 model = model.to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=5e-6)
@@ -411,8 +417,7 @@ for epoch in range(num_epochs):
         audios = batch['audios']
         audios = audios.squeeze(1).to(device)
         texts = batch['texts'].to(device)
-        images = batch['images']
-        images = images.view(images.size(0), -1, images.size(3), images.size(4)).to(device)
+        images = batch['images'] # can't use .to(device) on list --> this is done in the forward function
         text_attention_mask = batch['text_attention_mask'].to(device)
         labels = batch['labels'].to(device)
 
@@ -446,8 +451,7 @@ for epoch in range(num_epochs):
             audios = batch['audios']
             audios = audios.squeeze(1).to(device)
             texts = batch['texts'].to(device)
-            images = batch['images']
-            images = images.view(images.size(0), -1, images.size(3), images.size(4)).to(device)
+            images = batch['images'] # can't use .to(device) on list --> this is done in the forward function
             text_attention_mask = batch['text_attention_mask'].to(device)
             labels = batch['labels'].to(device)
 
@@ -506,8 +510,7 @@ with torch.no_grad():
         audios = batch['audios']
         audios = audios.squeeze(1).to(device)
         texts = batch['texts'].to(device)
-        images = batch['images']
-        images = images.view(images.size(0), -1, images.size(3), images.size(4)).to(device)
+        images = batch['images'] # can't use .to(device) on list --> this is done in the forward function
         text_attention_mask = batch['text_attention_mask'].to(device)
         labels = batch['labels'].to(device)
 
